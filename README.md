@@ -508,18 +508,334 @@ The memory was re-confirmed against current telemetry, not just repeated. `check
 
 ## Prompt history
 
-Excerpt from the prompt used to build this project with AI-assisted coding:
+# SRE Investigation Agent
 
+An AI-powered SRE investigation agent built on Cloudflare's AI application platform.
+
+The project allows an SRE to describe an incident such as:
+
+> "API latency is high for payment-service. Investigate."
+
+The agent investigates the incident through a multi-step workflow, retrieves relevant observability data using tools, searches previous incidents using semantic memory, reasons over the collected evidence, and produces a structured investigation report with likely causes and recommendations.
+
+## What This Project Demonstrates
+
+* **LLM-powered reasoning** — Uses Workers AI to analyze incidents and collected evidence.
+* **Agent/tool calling** — The agent dynamically decides which investigation tools it needs.
+* **Multi-step orchestration** — Cloudflare Workflows coordinates the durable investigation process.
+* **Chat-based interaction** — React UI provides an interface for submitting incidents and viewing investigation progress.
+* **Short-term state** — Conversation and investigation state are persisted for the current interaction.
+* **Long-term semantic memory** — Vectorize stores important conclusions from previous investigations and retrieves relevant incidents for future investigations.
+* **Cloudflare-native architecture** — Uses Cloudflare Workers, Agents SDK, Workers AI, Workflows, D1, and Vectorize.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    UI[React Chat UI]
+    API[Cloudflare Worker / API]
+    WF[Cloudflare Workflow]
+    MEM[Memory Retrieval]
+    AGENT[Investigation Agent]
+    TOOLS[Investigation Tools]
+    AI[Workers AI]
+    D1[D1 Database]
+    VEC[Vectorize]
+
+    UI --> API
+    API --> WF
+
+    WF --> MEM
+    MEM --> VEC
+
+    WF --> AGENT
+    AGENT --> AI
+    AGENT --> TOOLS
+
+    TOOLS --> D1
+
+    AGENT --> MEM
+    MEM --> VEC
+
+    WF --> API
+    API --> UI
 ```
-  * Agents SDK
-  * Workers AI
-  * Workflows
-  * D1
-  * Vectorize
 
-  Keep the architecture understandable enough that I can explain every component in an interview.
+## Cloudflare Services
 
-  Start by inspecting the current repository and existing files. If this is a new repository, initialize the project using the appropriate Cloudflare starter/template.
+| Service        | Responsibility                                 |
+| -------------- | ---------------------------------------------- |
+| **Workers**    | Backend API and application runtime            |
+| **Agents SDK** | Agent runtime and tool-calling behavior        |
+| **Workers AI** | LLM inference and reasoning                    |
+| **Workflows**  | Durable multi-step investigation orchestration |
+| **D1**         | Structured application and investigation data  |
+| **Vectorize**  | Semantic search and long-term incident memory  |
 
-  Before making major architectural changes, explain the planned file structure and implementation briefly, then implement it.
+The architecture intentionally avoids unnecessary infrastructure such as Kubernetes, Kafka, Redis, Temporal, EFS, or multiple microservices.
+
+## Investigation Flow
+
+1. The user submits an incident through the React chat UI.
+2. The Worker starts an investigation Workflow.
+3. Relevant previous incidents are retrieved from Vectorize.
+4. The Investigation Agent receives the incident and retrieved context.
+5. The agent decides which tools are required.
+6. Investigation tools retrieve metrics, logs, and runbook information.
+7. The agent analyzes the collected evidence.
+8. Important conclusions are extracted and stored as long-term semantic memory.
+9. The Workflow produces the final investigation report.
+10. The result is displayed in the chat UI.
+
+### Example
+
+**Input**
+
+> API latency is high for `payment-service`. Investigate.
+
+**Investigation**
+
+The agent can investigate:
+
+* Service latency and error-rate metrics
+* Application logs
+* Relevant runbooks
+* Similar incidents from previous investigations
+
+**Output**
+
+```text
+Investigation complete.
+
+Service: payment-service
+
+Likely cause:
+Database connection pool exhaustion.
+
+Evidence:
+- p95 latency: 1850ms
+- error rate: 8.2%
+- repeated database connection timeout errors
+- logs indicate connection pool exhaustion
+- a similar previous incident was resolved by increasing the DB pool
+
+Recommendation:
+Increase the DB connection pool from 20 to 40 and monitor p95 latency.
+```
+
+## Agent and Tool Calling
+
+The LLM is responsible for **reasoning and deciding what information it needs**.
+
+Tools are responsible for retrieving the actual information.
+
+Example tools:
+
+```text
+get_service_metrics()
+search_logs()
+search_runbook()
+```
+
+This keeps the responsibilities separate:
+
+```text
+Workflow
+   ↓
+Agent
+   ↓
+Decides which tools are needed
+   ↓
+Tools retrieve evidence
+   ↓
+Agent reasons over evidence
+   ↓
+Investigation result
+```
+
+Tool implementations are separated from their definitions so that the agent logic does not depend directly on the underlying observability provider.
+
+## Memory Architecture
+
+The project uses two types of state:
+
+### Short-Term State
+
+Used for the current investigation and conversation.
+
+Stored structured data includes things such as:
+
+* Investigation ID
+* User query
+* Investigation status
+* Tool results
+* Final response
+* Conversation messages
+
+D1 is used for this structured persistence.
+
+### Long-Term Semantic Memory
+
+Important conclusions from completed investigations are converted into embeddings and stored in Vectorize.
+
+For a future investigation, the system can retrieve semantically similar incidents.
+
+For example:
+
+```text
+Previous incident:
+"payment-service experienced high latency because the
+database connection pool was exhausted."
+
+New incident:
+"payment-service has unusually high API latency."
+
+        ↓
+
+Vectorize semantic search
+
+        ↓
+
+Relevant previous incident retrieved
+
+        ↓
+
+Agent considers it as additional evidence
+```
+
+This allows the agent to learn from previous investigations without requiring the user to manually provide the historical context.
+
+## Mock Observability Providers
+
+The project uses mock observability data rather than introducing external monitoring infrastructure.
+
+The mock providers expose the same interface that real observability integrations would use:
+
+```text
+get_service_metrics()
+search_logs()
+search_runbook()
+```
+
+This keeps the project focused on the AI-agent architecture while making the application deterministic and easy to run locally.
+
+The providers can later be replaced with integrations for real monitoring and logging systems without changing the core agent workflow.
+
+## Project Structure
+
+```text
+src/
+├── agent/
+│   ├── agent.ts
+│   ├── tools.ts
+│   └── prompts.ts
+│
+├── tools/
+│   ├── metrics.ts
+│   ├── logs.ts
+│   └── runbook.ts
+│
+├── memory/
+│   ├── retrieve.ts
+│   ├── store.ts
+│   └── embeddings.ts
+│
+├── workflow/
+│   └── investigation.ts
+│
+├── api/
+│   └── chat.ts
+│
+├── db/
+│   └── schema.sql
+│
+└── frontend/
+    └── ...
+```
+
+The exact structure may evolve during implementation, but the main goal is to keep:
+
+* HTTP routing
+* Agent/LLM logic
+* Tool definitions
+* Tool implementations
+* Memory
+* Workflow orchestration
+
+as separate responsibilities.
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the local development server:
+
+```bash
+npm run dev
+```
+
+The application provides a React chat interface where incidents can be submitted to the SRE Investigation Agent.
+
+## Cloudflare Deployment
+
+The application is designed to run entirely on Cloudflare.
+
+Required Cloudflare resources:
+
+* Workers
+* Workers AI
+* D1
+* Vectorize
+* Workflows
+* Agents SDK
+
+Configuration is provided through the Cloudflare environment/binding configuration. Secrets and credentials are not committed to the repository.
+
+## Design Principles
+
+The project intentionally follows a few simple architectural principles:
+
+**Workflow = orchestration**
+
+The Workflow manages durable multi-step execution and investigation progress.
+
+**Agent = reasoning**
+
+The Agent/LLM decides what information it needs and which tools to call.
+
+**Tools = evidence**
+
+Tools retrieve actual metrics, logs, and runbook information.
+
+**D1 = structured state**
+
+D1 stores conversations, investigations, and other structured application data.
+
+**Vectorize = semantic memory**
+
+Vectorize stores and retrieves useful knowledge from previous investigations.
+
+This separation keeps the system small enough to understand while still demonstrating the core capabilities of a production-style AI SRE agent.
+
+## Future Improvements
+
+Potential extensions include:
+
+* Real observability integrations
+* Streaming investigation progress
+* More sophisticated incident correlation
+* Additional investigation tools
+* Better memory extraction and ranking
+* Authentication and role-based access
+* Human approval for remediation actions
+* Automated remediation through controlled runbooks
+* Evaluation datasets for measuring investigation quality
+* More advanced incident timeline reconstruction
+
+The current implementation intentionally keeps the infrastructure minimal so that the architecture remains easy to understand, deploy, and explain.
+
 ```
