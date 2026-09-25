@@ -1,0 +1,31 @@
+/**
+ * demo-shop: a deliberately small Worker that the SRE agent monitors.
+ * It produces REAL telemetry (Workers Analytics, Workers Logs, D1 query
+ * insights, deploy history). Incidents are created by deploying a "bad"
+ * version (see the demo:* scripts in the root package.json).
+ */
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "demo-shop",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "demo-shop-db",
+      "database_id": "bc0d3eba-d464-412a-bbd4-2ca43e843eba",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Feature flag + fault injection. Changed via `wrangler deploy --var`, so
+  // every change shows up in the real deploy history.
+  "vars": {
+    "FEATURE_FULLTEXT_SEARCH": "off",
+    "FAULT_ERROR_RATE": "0"
+  },
+
+  // Workers Logs: keep every request's log line (the agent searches these).
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

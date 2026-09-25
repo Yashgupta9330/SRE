@@ -1,0 +1,83 @@
+/**
+ * Cloudflare configuration for the SRE Investigation Agent.
+ *
+ * One Worker hosts everything:
+ *   - the React SPA (static assets)
+ *   - the HTTP API (/api/*)
+ *   - the Agents SDK Durable Object (/agents/*, WebSocket)
+ *   - the Investigation Workflow
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sre-investigation-agent",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The built React app. API and agent routes hit the Worker first; every
+  // other unknown path falls back to index.html (client-side routing).
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/agents/*"]
+  },
+
+  // Workers AI: LLM (Llama 3.3) + embedding model (bge-base-en-v1.5).
+  // Workers AI always executes on Cloudflare's network, even in `vite dev`.
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+
+  // Vectorize: semantic memory. One index, two namespaces ("incidents", "runbooks").
+  // Vectorize has no local simulator, so local dev proxies to the real index.
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "sre-memory",
+      "remote": true
+    }
+  ],
+
+  // D1: structured, relational source of truth (conversations, investigations,
+  // incident memories, runbooks). Local dev uses a local SQLite file.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sre-agent-db",
+      // From `wrangler d1 create sre-agent-db` (replace with your own when forking).
+      "database_id": "c5c3162c-515c-45e3-9a2b-09ae058db5ed",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // The Agents SDK runs each agent instance as a SQLite-backed Durable Object.
+  // One instance per conversation id = one place for that session's state.
+  "durable_objects": {
+    "bindings": [{ "name": "SreAgent", "class_name": "SreAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SreAgent"] }],
+
+  // Cloudflare Workflows: durable, retryable, multi-step orchestration.
+  "workflows": [
+    {
+      "name": "investigation-workflow",
+      "binding": "INVESTIGATION_WORKFLOW",
+      "class_name": "InvestigationWorkflow"
+    }
+  ],
+
+  "vars": {
+    "LLM_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+    // "cloudflare" = real telemetry of the Workers below (needs the CF_API_TOKEN
+    // secret); "mock" = the simulated services in worker/providers/mock.
+    "PROVIDER_MODE": "cloudflare",
+    "CF_ACCOUNT_ID": "839453a1c373100cd160239b6327f708",
+    // Workers the agent may investigate, and the D1 database each one uses.
+    "SERVICE_CATALOG": {
+      "demo-shop": { "script": "demo-shop", "d1DatabaseId": "bc0d3eba-d464-412a-bbd4-2ca43e843eba" }
+    }
+  },
+
+  "observability": { "enabled": true }
+}

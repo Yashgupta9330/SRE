@@ -1,0 +1,42 @@
+{
+  "name": "sre-investigation-agent",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite dev",
+    "dev:offline": "OFFLINE=1 vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply sre-agent-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply sre-agent-db --remote",
+    "vectorize:create": "wrangler vectorize create sre-memory --dimensions=768 --metric=cosine",
+    "demo:typecheck": "wrangler types -c demo-shop/wrangler.jsonc demo-shop/worker-configuration.d.ts --include-env=false && tsc --noEmit -p demo-shop",
+    "demo:setup": "wrangler d1 migrations apply demo-shop-db --remote -c demo-shop/wrangler.jsonc && node demo-shop/scripts/seed.mjs && wrangler d1 execute demo-shop-db --remote -c demo-shop/wrangler.jsonc --file demo-shop/seed.sql",
+    "demo:deploy": "wrangler deploy -c demo-shop/wrangler.jsonc --message \"Baseline: category search\"",
+    "demo:break-search": "wrangler deploy -c demo-shop/wrangler.jsonc --var FEATURE_FULLTEXT_SEARCH:on --message \"Enable full-text product search\"",
+    "demo:break-errors": "wrangler deploy -c demo-shop/wrangler.jsonc --var FAULT_ERROR_RATE:0.2 --message \"Switch inventory client to backend pool v2\"",
+    "demo:fix": "wrangler deploy -c demo-shop/wrangler.jsonc --message \"Roll back to baseline\"",
+    "demo:load": "node demo-shop/scripts/load.mjs"
+  },
+  "type": "module",
+  "dependencies": {
+    "agents": "^0.24.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.60.2",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.141.0"
+  },
+  "private": true
+}
